@@ -22,10 +22,22 @@ The objective is to automate the process of making API requests to the Pokemon A
 
  The objective is to automate the retrival of data for multiple Pokemon and store it in separate files.
 
- * Creating a script that loops through a list of Pokemon [Bulbasaur, Ivysaur, Venusaur, Charmande, Charmeleon].
+ *  Creating a script that loops through a list of Pokemon [Bulbasaur, Ivysaur, Venusaur, Charmande, Charmeleon].
 
  ### Task 3: Summarize Pokemon Data.
 
  The objective is to create a report that summarizes data for multiple Pokemon.
 
  *  Writing a shell script that reads all the JSON files generated in Task 2 and extracts the name, height and weight of each Pokemon and then generating a CSV file.
+
+ ### Task 4: Error Handling and Retry Logic.
+
+ The objective is to add robust error handling and retry logic for API requests.
+
+ *  Modifyng the script in Task 2 to habdle potential errrors like network issues and invalid Pokemon names.
+
+ ### Task 5: Parallel Data Fetching
+
+ The objective is to speed up data retrieval using parallel processing.
+
+ *  Writing a script that fetches data for these `Pokémon[Bulbasaur, Ivysaur, Venusaur, Charmander, Charmeleon ]` in parallel by leveraging background processes and process management tools.
