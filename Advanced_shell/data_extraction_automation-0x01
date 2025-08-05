@@ -1,0 +1,59 @@
+#!/bin/bash
+
+DATA_FILE="data.json"
+OUTPUT_FILE="pokemon_info.txt"
+ERROR_FILE="errors.txt"
+
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >> "$ERROR_FILE"
+}
+
+validate_json() {
+    if ! jq empty "$DATA_FILE" >/dev/null 2>&1; then
+        log_error "Invalid JSON format in $DATA_FILE"
+        echo "Error: Invalid JSON format in $DATA_FILE. Check $ERROR_FILE for details."
+        exit 1
+    fi
+}
+
+extract_and_format() {
+    echo "Extracting Pokemon data from $DATA_FILE..."
+    echo "===================================="
+
+    if ! validate_json; then
+        echo "Error validating JSON. Check $ERROR_FILE for details."
+        exit 1
+    fi
+
+    jq -r '[.name, (.height/10), (.weight/10), (.types | map(.type.name) | join("/"))] | @tsv' "$DATA_FILE" | \
+    awk -F'\t' '{
+        name = $1
+        height = $2
+        weight = $3
+        type = $4
+        printf "%s is of type %s, weight %.1fkgs, and is %.1fm tall.\n", name, type, weight, height
+    }' | \
+    sed 's/^\([a-z]\)/\U\1/' | \
+    sed 's/\t\([a-z]\)/\t\U\1/g' | \
+    sed 's/\/\([a-z]\)/\/\U\1/g' | \
+    awk -F'\t' '{
+        printf "%s is of type %s, weight %.1fkgs, and is %.1fm tall.\n", $1, $4, $3, $2
+    }' | tee "$OUTPUT_FILE"
+
+    echo "Data extracted and formatted successfully! Output saved to $OUTPUT_FILE."
+}
+
+# Check if the data file exists
+if [ ! -f "$DATA_FILE" ]; then
+    echo "Data file $DATA_FILE does not exist. Please run the API automation script first."
+    exit 1
+fi
+
+if ! command -v jq &> /dev/null; then
+    log_error "jq command not found. Please install jq to run this script."
+    echo "Error: jq command not found. Check $ERROR_FILE for details."
+    exit 1
+fi
+
+extract_and_format
