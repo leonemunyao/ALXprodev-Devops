@@ -1,0 +1,131 @@
+#!/bin/bash
+
+
+BASE_API_URL="https://pokeapi.co/api/v2/pokemon/"
+
+# List of Pokemon to retrieve
+POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
+
+# Configuration
+ERROR_FILE="batch_errors.txt"
+SUCCESS_COUNT=0
+FAILURE_COUNT=0
+DELAY_SECONDS=2
+
+# Function to log errors with timestamp
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >> "$ERROR_FILE"
+}
+
+# Function to log success
+log_success() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] SUCCESS: $1" >> "batch_success.log"
+}
+
+# Function to fetch individual Pokemon data
+fetch_pokemon() {
+    local pokemon_name="$1"
+    local output_file="${pokemon_name}.json"
+    local api_url="${BASE_API_URL}${pokemon_name}"
+    
+    echo "Fetching data for $pokemon_name..."
+    
+    # Make API request with curl
+    HTTP_CODE=$(curl -s -w "%{http_code}" -o "$output_file" "$api_url")
+    
+    # Check if curl command was successful
+    if [ $? -eq 0 ]; then
+        # Check HTTP response code
+        if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✓ Successfully retrieved $pokemon_name data -> $output_file"
+            log_success "Retrieved $pokemon_name data (${HTTP_CODE})"
+            ((SUCCESS_COUNT++))
+            
+            file_size=$(wc -c < "$output_file")
+            echo "  File size: $file_size bytes"
+            
+        else
+            echo "✗ Failed to retrieve $pokemon_name (HTTP: $HTTP_CODE)"
+            log_error "Failed to retrieve $pokemon_name - HTTP code: $HTTP_CODE"
+            rm -f "$output_file"
+            ((FAILURE_COUNT++))
+        fi
+    else
+        echo "✗ Network error while fetching $pokemon_name"
+        log_error "Network error for $pokemon_name - curl failed"
+        rm -f "$output_file"
+        ((FAILURE_COUNT++))
+    fi
+}
+
+add_delay() {
+    if [ $DELAY_SECONDS -gt 0 ]; then
+        echo "  Waiting ${DELAY_SECONDS} seconds before next request..."
+        sleep $DELAY_SECONDS
+    fi
+}
+
+show_progress() {
+    local current=$1
+    local total=$2
+    local pokemon=$3
+    echo ""
+    echo "=========================================="
+    echo "Progress: $current/$total - Processing: $pokemon"
+    echo "=========================================="
+}
+
+batch_process() {
+    echo "Starting Batch Pokemon Data Retrieval"
+    echo "======================================"
+    echo "Pokemon list: ${POKEMON_LIST[*]}"
+    echo "Total Pokemon: ${#POKEMON_LIST[@]}"
+    echo "Rate limit delay: ${DELAY_SECONDS} seconds"
+    echo ""
+    
+    local total_pokemon=${#POKEMON_LIST[@]}
+    local counter=1
+    
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        show_progress $counter $total_pokemon "$pokemon"
+        
+        fetch_pokemon "$pokemon"
+        
+        if [ $counter -lt $total_pokemon ]; then
+            add_delay
+        fi
+        
+        ((counter++))
+    done
+    
+    echo ""
+    echo "=========================================="
+    echo "BATCH PROCESSING COMPLETE"
+    echo "=========================================="
+    echo "Successful retrievals: $SUCCESS_COUNT"
+    echo "Failed retrievals: $FAILURE_COUNT"
+    echo "Total processed: $((SUCCESS_COUNT + FAILURE_COUNT))"
+    
+    echo ""
+    echo "Generated files:"
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        local file="${pokemon}.json"
+        if [ -f "$file" ]; then
+            echo "✓ $file ($(wc -c < "$file") bytes)"
+        else
+            echo "✗ $file (missing)"
+        fi
+    done
+    
+    if [ $FAILURE_COUNT -gt 0 ]; then
+        echo ""
+        echo "Check $ERROR_FILE for error details."
+    fi
+}
+
+echo "Pokemon Batch Processing Script"
+echo "==============================="
+
+batch_process
+
+echo "Script execution completed."

@@ -16,4 +16,9 @@ The objective is to automate the process of making API requests to the Pokemon A
 
  *  Writing a script that extracts the Pokemon's name, height, weight and type from the json file created in Task 0 and format the ouput in a human-redable way. `Pikachu is of type Electric, weight 6kgs, and is 0,4m tall.`
 
- 
+ ### Task 2: Batch Pokemon Data Retrieval.
+
+ The objective is to automate the retrival of data for multiple Pokemon and store it in separate files.
+
+ * Creating a script that loops through a list of Pokemon [Bulbasaur, Ivysaur, Venusaur, Charmande, Charmeleon]. 
+
