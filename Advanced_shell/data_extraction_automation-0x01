@@ -32,13 +32,18 @@ extract_and_format() {
         height = $2
         weight = $3
         type = $4
-        printf "%s is of type %s, weight %.1fkgs, and is %.1fm tall.\n", name, type, weight, height
+        printf "%s\t%.1f\t%.0f\t%s\n", name, height, weight, type
     }' | \
     sed 's/^\([a-z]\)/\U\1/' | \
-    sed 's/\t\([a-z]\)/\t\U\1/g' | \
+    sed 's/\t\([a-z][^/]*\)/\t\U\1/g' | \
     sed 's/\/\([a-z]\)/\/\U\1/g' | \
     awk -F'\t' '{
-        printf "%s is of type %s, weight %.1fkgs, and is %.1fm tall.\n", $1, $4, $3, $2
+        name = $1
+        height = $2
+        weight = $3
+        type = $4
+        formatted_output = name " is of type " type ", weighs " weight "kg, and is " height "m tall."
+        print formatted_output
     }' | tee "$OUTPUT_FILE"
 
     echo "Data extracted and formatted successfully! Output saved to $OUTPUT_FILE."
