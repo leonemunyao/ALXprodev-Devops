@@ -26,25 +26,21 @@ extract_and_format() {
         exit 1
     fi
 
-    jq -r '[.name, (.height/10), (.weight/10), (.types | map(.type.name) | join("/"))] | @tsv' "$DATA_FILE" | \
-    awk -F'\t' '{
-        name = $1
-        height = $2
-        weight = $3
-        type = $4
-        printf "%s\t%.1f\t%.0f\t%s\n", name, height, weight, type
-    }' | \
-    sed 's/^\([a-z]\)/\U\1/' | \
-    sed 's/\t\([a-z][^/]*\)/\t\U\1/g' | \
-    sed 's/\/\([a-z]\)/\/\U\1/g' | \
-    awk -F'\t' '{
-        name = $1
-        height = $2
-        weight = $3
-        type = $4
-        formatted_output = name " is of type " type ", weighs " weight "kg, and is " height "m tall."
-        print formatted_output
-    }' | tee "$OUTPUT_FILE"
+    name=$(jq -r '.name' "$DATA_FILE")
+    height_raw=$(jq -r '.height' "$DATA_FILE")
+    weight_raw=$(jq -r '.weight' "$DATA_FILE")
+    type=$(jq -r '.types[].type.name' "$DATA_FILE" | awk '{if(NR==1) result=$1; else result=result"/"$1} END{print result}')
+    
+    formatted_height=$(echo "$height_raw" | awk '{printf "%.1f", $1/10}')
+    formatted_weight=$(echo "$weight_raw" | awk '{printf "%.0f", $1/10}')
+    
+    name=$(echo "$name" | sed 's/^./\U&/')
+    type=$(echo "$type" | sed 's/\b\w/\U&/g')
+
+   
+    formatted_output="$name is of type $type, weighs ${formatted_weight}kg, and is ${formatted_height}m tall."
+    
+    echo "$formatted_output" | tee "$OUTPUT_FILE"
 
     echo "Data extracted and formatted successfully! Output saved to $OUTPUT_FILE."
 }

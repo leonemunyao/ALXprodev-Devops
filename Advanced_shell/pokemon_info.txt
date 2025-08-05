@@ -1,1 +1,1 @@
-Pikachu is of type ELECTRIC, weighs 6kg, and is 0.4m tall.
+Pikachu is of type Electric, weighs 6kg, and is 0.4m tall.
