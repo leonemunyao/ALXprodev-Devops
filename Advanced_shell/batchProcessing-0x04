@@ -1,0 +1,433 @@
+#!/bin/bash
+
+# Base API URL
+BASE_API_URL="https://pokeapi.co/api/v2/pokemon/"
+
+# List of Pokemon to retrieve
+POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
+
+ERROR_FILE="parallel_errors.txt"
+SUCCESS_FILE="parallel_success.log"
+PID_FILE="parallel_pids.txt"
+MAX_CONCURRENT=5
+SUCCESS_COUNT=0
+FAILURE_COUNT=0
+
+declare -a PIDS=()
+declare -a POKEMON_NAMES=()
+declare -a START_TIMES=()
+
+
+log_message() {
+    local level="$1"
+    local message="$2"
+    local logfile="$3"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $level: $message" >> "$logfile"
+}
+
+# Function to log errors
+log_error() {
+    log_message "ERROR" "$1" "$ERROR_FILE"
+}
+
+# Function to log success
+log_success() {
+    log_message "SUCCESS" "$1" "$SUCCESS_FILE"
+}
+
+# Function to fetch individual Pokemon data (runs in background)
+fetch_pokemon_parallel() {
+    local pokemon_name="$1"
+    local output_file="${pokemon_name}.json"
+    local api_url="${BASE_API_URL}${pokemon_name}"
+    local start_time=$(date +%s)
+    
+    # Create a temporary status file for this process
+    local status_file="${pokemon_name}_status.tmp"
+    
+    echo "STARTED" > "$status_file"
+    
+    # Make API request with curl
+    HTTP_CODE=$(curl -s -w "%{http_code}" -o "$output_file" --connect-timeout 30 --max-time 60 "$api_url")
+    local curl_exit_code=$?
+    
+    # Calculate processing time
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    
+    # Check if request was successful
+    if [ $curl_exit_code -eq 0 ] && [ "$HTTP_CODE" -eq 200 ]; then
+        if [ -s "$output_file" ]; then
+            # Validate JSON if jq is available
+            if command -v jq &> /dev/null; then
+                if jq empty "$output_file" >/dev/null 2>&1; then
+                    local file_size=$(wc -c < "$output_file")
+                    echo "SUCCESS:$pokemon_name:$file_size:$duration" > "$status_file"
+                    log_success "Retrieved $pokemon_name ($file_size bytes, ${duration}s)"
+                else
+                    echo "ERROR:$pokemon_name:Invalid JSON:$duration" > "$status_file"
+                    log_error "Invalid JSON for $pokemon_name"
+                    rm -f "$output_file"
+                fi
+            else
+                local file_size=$(wc -c < "$output_file")
+                echo "SUCCESS:$pokemon_name:$file_size:$duration" > "$status_file"
+                log_success "Retrieved $pokemon_name ($file_size bytes, ${duration}s)"
+            fi
+        else
+            echo "ERROR:$pokemon_name:Empty response:$duration" > "$status_file"
+            log_error "Empty response for $pokemon_name"
+            rm -f "$output_file"
+        fi
+    else
+        echo "ERROR:$pokemon_name:HTTP_$HTTP_CODE:$duration" > "$status_file"
+        log_error "Failed to retrieve $pokemon_name (HTTP: $HTTP_CODE, curl: $curl_exit_code)"
+        rm -f "$output_file"
+    fi
+}
+
+# Function to start parallel processes
+start_parallel_processes() {
+    echo "Starting parallel Pokemon data retrieval..."
+    echo "==========================================="
+    echo "Pokemon list: ${POKEMON_LIST[*]}"
+    echo "Max concurrent processes: $MAX_CONCURRENT"
+    echo "Total Pokemon: ${#POKEMON_LIST[@]}"
+    echo ""
+    
+    # Clear previous log files
+    > "$ERROR_FILE"
+    > "$SUCCESS_FILE"
+    > "$PID_FILE"
+    
+    # Start background processes
+    local counter=0
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        echo "Starting process for $pokemon..."
+        
+        # Start the fetch function in background
+        fetch_pokemon_parallel "$pokemon" &
+        local pid=$!
+        
+        # Store process information
+        PIDS[$counter]=$pid
+        POKEMON_NAMES[$counter]=$pokemon
+        START_TIMES[$counter]=$(date +%s)
+        
+        # Log PID for tracking
+        echo "$pid:$pokemon:$(date)" >> "$PID_FILE"
+        
+        echo "  Started background process $pid for $pokemon"
+        
+        ((counter++))
+        
+        # Limit concurrent processes if needed
+        if [ ${#PIDS[@]} -ge $MAX_CONCURRENT ]; then
+            echo "  Reached max concurrent limit, waiting for some to complete..."
+            wait_for_some_processes
+        fi
+    done
+    
+    echo ""
+    echo "All processes started. Total background processes: ${#PIDS[@]}"
+    echo "PIDs: ${PIDS[*]}"
+}
+
+# Function to wait for some processes to complete (used for throttling)
+wait_for_some_processes() {
+    local completed=0
+    local target=$((MAX_CONCURRENT / 2))  # Wait for half to complete
+    
+    while [ $completed -lt $target ]; do
+        for i in "${!PIDS[@]}"; do
+            local pid=${PIDS[$i]}
+            local pokemon=${POKEMON_NAMES[$i]}
+            
+            if ! kill -0 "$pid" 2>/dev/null; then
+                echo "    Process $pid ($pokemon) completed"
+                unset PIDS[$i]
+                unset POKEMON_NAMES[$i]
+                ((completed++))
+                
+                if [ $completed -ge $target ]; then
+                    break
+                fi
+            fi
+        done
+        sleep 1
+    done
+    
+    # Rebuild arrays without gaps
+    PIDS=($(for pid in "${PIDS[@]}"; do echo "$pid"; done))
+    POKEMON_NAMES=($(for name in "${POKEMON_NAMES[@]}"; do echo "$name"; done))
+}
+
+# Function to monitor running processes
+monitor_processes() {
+    echo "Monitoring background processes..."
+    echo "================================="
+    
+    local total_processes=${#PIDS[@]}
+    local completed=0
+    local running=0
+    
+    while [ $completed -lt $total_processes ]; do
+        running=0
+        completed=0
+        
+        for i in "${!PIDS[@]}"; do
+            local pid=${PIDS[$i]}
+            local pokemon=${POKEMON_NAMES[$i]}
+            
+            if kill -0 "$pid" 2>/dev/null; then
+                ((running++))
+            else
+                ((completed++))
+            fi
+        done
+        
+        # Show progress
+        local progress=$((completed * 100 / total_processes))
+        echo -ne "\rProgress: $completed/$total_processes completed ($progress%) - $running running"
+        
+        if [ $completed -lt $total_processes ]; then
+            sleep 2
+        fi
+    done
+    
+    echo ""
+    echo ""
+}
+
+# Function to wait for all processes to complete
+wait_for_all_processes() {
+    echo "Waiting for all background processes to complete..."
+    echo "================================================="
+    
+    # Monitor processes with progress updates
+    monitor_processes
+    
+    # Wait for each PID explicitly
+    for i in "${!PIDS[@]}"; do
+        local pid=${PIDS[$i]}
+        local pokemon=${POKEMON_NAMES[$i]}
+        local start_time=${START_TIMES[$i]}
+        
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Waiting for process $pid ($pokemon)..."
+            wait "$pid"
+            local exit_code=$?
+            
+            local end_time=$(date +%s)
+            local duration=$((end_time - start_time))
+            
+            if [ $exit_code -eq 0 ]; then
+                echo "✓ Process $pid ($pokemon) completed successfully (${duration}s)"
+            else
+                echo "✗ Process $pid ($pokemon) failed with exit code $exit_code (${duration}s)"
+            fi
+        fi
+    done
+    
+    echo ""
+    echo "All background processes completed!"
+}
+
+# Function to collect and analyze results
+collect_results() {
+    echo "Collecting and analyzing results..."
+    echo "=================================="
+    
+    SUCCESS_COUNT=0
+    FAILURE_COUNT=0
+    
+    local total_size=0
+    local total_duration=0
+    local fastest_time=999999
+    local slowest_time=0
+    local fastest_pokemon=""
+    local slowest_pokemon=""
+    
+    echo ""
+    echo "Individual results:"
+    echo "-------------------"
+    
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        local status_file="${pokemon}_status.tmp"
+        
+        if [ -f "$status_file" ]; then
+            local status_line=$(cat "$status_file")
+            IFS=':' read -r status name info duration <<< "$status_line"
+            
+            if [ "$status" = "SUCCESS" ]; then
+                local file_size=$info
+                echo "✓ $name: ${file_size} bytes (${duration}s)"
+                ((SUCCESS_COUNT++))
+                total_size=$((total_size + file_size))
+                total_duration=$((total_duration + duration))
+                
+                # Track fastest/slowest
+                if [ $duration -lt $fastest_time ]; then
+                    fastest_time=$duration
+                    fastest_pokemon=$name
+                fi
+                if [ $duration -gt $slowest_time ]; then
+                    slowest_time=$duration
+                    slowest_pokemon=$name
+                fi
+            else
+                echo "✗ $name: $info (${duration}s)"
+                ((FAILURE_COUNT++))
+            fi
+            
+            # Clean up temporary status file
+            rm -f "$status_file"
+        else
+            echo "✗ $pokemon: No status file found"
+            ((FAILURE_COUNT++))
+        fi
+    done
+    
+    echo ""
+    echo "Summary Statistics:"
+    echo "-------------------"
+    echo "Successful downloads: $SUCCESS_COUNT"
+    echo "Failed downloads: $FAILURE_COUNT"
+    echo "Total processed: $((SUCCESS_COUNT + FAILURE_COUNT))"
+    
+    if [ $SUCCESS_COUNT -gt 0 ]; then
+        echo "Total data downloaded: $total_size bytes"
+        echo "Average file size: $((total_size / SUCCESS_COUNT)) bytes"
+        echo "Total processing time: ${total_duration}s"
+        echo "Average processing time: $((total_duration / SUCCESS_COUNT))s"
+        echo "Fastest download: $fastest_pokemon (${fastest_time}s)"
+        echo "Slowest download: $slowest_pokemon (${slowest_time}s)"
+        
+        local success_rate=$(awk "BEGIN {printf \"%.1f\", ($SUCCESS_COUNT*100/($SUCCESS_COUNT+$FAILURE_COUNT))}")
+        echo "Success rate: ${success_rate}%"
+    fi
+}
+
+# Function to list generated files
+list_generated_files() {
+    echo ""
+    echo "Generated files:"
+    echo "=================="
+    
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        local file="${pokemon}.json"
+        if [ -f "$file" ] && [ -s "$file" ]; then
+            local size=$(wc -c < "$file")
+            echo "✓ $file ($size bytes)"
+        else
+            echo "✗ $file (missing or empty)"
+        fi
+    done
+}
+
+# Function to cleanup previous runs
+cleanup_previous_run() {
+    echo "Cleaning up files from previous runs..."
+    
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        rm -f "${pokemon}.json"
+        rm -f "${pokemon}_status.tmp"
+    done
+
+    > "$ERROR_FILE"
+    > "$SUCCESS_FILE"
+    > "$PID_FILE"
+    
+    echo "Cleanup completed."
+    echo ""
+}
+
+# Function to handle script interruption
+handle_interrupt() {
+    echo ""
+    echo "Script interrupted! Cleaning up background processes..."
+    
+    for pid in "${PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Terminating process $pid..."
+            kill "$pid" 2>/dev/null
+        fi
+    done
+    
+    sleep 2
+    
+    for pid in "${PIDS[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Force killing process $pid..."
+            kill -9 "$pid" 2>/dev/null
+        fi
+    done
+    
+    echo "Cleanup completed."
+    exit 1
+}
+
+# Function to validate prerequisites
+validate_prerequisites() {
+    echo "Validating prerequisites..."
+    
+    if ! command -v curl &> /dev/null; then
+        echo "Error: curl is not installed."
+        exit 1
+    fi
+    
+    # Test internet connectivity
+    if ! curl -s --connect-timeout 5 --head "https://httpbin.org/status/200" >/dev/null 2>&1; then
+        echo "Warning: Internet connectivity test failed."
+    fi
+    
+    echo "Prerequisites validated."
+    echo ""
+}
+
+main() {
+    echo "Parallel Pokemon Data Fetching Script"
+    echo "====================================="
+    echo "Start time: $(date)"
+    echo ""
+
+    trap handle_interrupt INT TERM
+
+    validate_prerequisites
+
+    local script_start_time=$(date +%s)
+
+    start_parallel_processes
+
+    wait_for_all_processes
+
+    collect_results
+    
+    list_generated_files
+    
+    # Calculate total script execution time
+    local script_end_time=$(date +%s)
+    local total_script_time=$((script_end_time - script_start_time))
+    
+    echo ""
+    echo "=================================="
+    echo "PARALLEL PROCESSING COMPLETE"
+    echo "=================================="
+    echo "Total script execution time: ${total_script_time}s"
+    echo "End time: $(date)"
+    
+    if [ $FAILURE_COUNT -gt 0 ]; then
+        echo ""
+        echo "Check $ERROR_FILE for error details."
+    fi
+    
+    if [ $SUCCESS_COUNT -gt 0 ]; then
+        echo "Check $SUCCESS_FILE for success details."
+    fi
+}
+
+if [ "$1" = "--clean" ]; then
+    cleanup_previous_run
+fi
+
+main

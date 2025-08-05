@@ -1,0 +1,5 @@
+34655:bulbasaur:Tue Aug  5 05:25:28 PM EAT 2025
+34660:ivysaur:Tue Aug  5 05:25:28 PM EAT 2025
+34665:venusaur:Tue Aug  5 05:25:28 PM EAT 2025
+34671:charmander:Tue Aug  5 05:25:28 PM EAT 2025
+34678:charmeleon:Tue Aug  5 05:25:28 PM EAT 2025
