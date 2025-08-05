@@ -1,0 +1,216 @@
+#!/bin/bash
+
+CSV_FILE="pokemon_summary.csv"
+REPORT_FILE="pokemon_report.txt"
+ERROR_FILE="summary_errors.txt"
+
+# Pokemon list from Task 2
+POKEMON_LIST=("bulbasaur" "ivysaur" "venusaur" "charmander" "charmeleon")
+
+PROCESSED_COUNT=0
+ERROR_COUNT=0
+
+log_error() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: $1" >> "$ERROR_FILE"
+}
+
+# Function to check if required files exist
+check_json_files() {
+    echo "Checking for JSON files from Task 2..."
+    
+    local missing_files=0
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        local json_file="${pokemon}.json"
+        if [ ! -f "$json_file" ]; then
+            echo "✗ Missing: $json_file"
+            log_error "Missing JSON file: $json_file"
+            ((missing_files++))
+        else
+            echo "✓ Found: $json_file"
+        fi
+    done
+    
+    if [ $missing_files -gt 0 ]; then
+        echo "Error: $missing_files JSON files are missing. Please run Task 2 first."
+        exit 1
+    fi
+    
+    echo "All required JSON files found."
+    echo ""
+}
+
+# Function to extract data from a single JSON file
+extract_pokemon_data() {
+    local json_file="$1"
+    local pokemon_name=$(basename "$json_file" .json)
+    
+    echo "Processing $json_file..."
+    
+
+    if [ ! -f "$json_file" ]; then
+        log_error "File not found: $json_file"
+        return 1
+    fi
+    
+    if ! jq empty "$json_file" >/dev/null 2>&1; then
+        log_error "Invalid JSON format in $json_file"
+        echo "  ✗ Invalid JSON format"
+        ((ERROR_COUNT++))
+        return 1
+    fi
+    
+    local name=$(jq -r '.name' "$json_file" 2>/dev/null)
+    local height=$(jq -r '.height' "$json_file" 2>/dev/null)
+    local weight=$(jq -r '.weight' "$json_file" 2>/dev/null)
+    
+
+    if [ "$name" = "null" ] || [ "$height" = "null" ] || [ "$weight" = "null" ]; then
+        log_error "Missing data fields in $json_file"
+        echo "  ✗ Missing required data fields"
+        ((ERROR_COUNT++))
+        return 1
+    fi
+    
+    local height_m=$(echo "$height" | awk '{printf "%.1f", $1/10}')
+    local weight_kg=$(echo "$weight" | awk '{printf "%.1f", $1/10}')
+    
+
+    local formatted_name=$(echo "$name" | sed 's/^./\U&/')
+    
+    echo "  ✓ $formatted_name: ${height_m}m, ${weight_kg}kg"
+    
+
+    echo "$formatted_name,$height_m,$weight_kg" >> "$CSV_FILE"
+    
+    ((PROCESSED_COUNT++))
+    return 0
+}
+
+# Function to create CSV file with header
+create_csv_file() {
+    echo "Creating CSV file: $CSV_FILE"
+    
+    echo "Name,Height(m),Weight(kg)" > "$CSV_FILE"
+    
+
+    for pokemon in "${POKEMON_LIST[@]}"; do
+        local json_file="${pokemon}.json"
+        extract_pokemon_data "$json_file"
+    done
+    
+    echo ""
+    echo "CSV file created successfully!"
+    echo "Processed: $PROCESSED_COUNT Pokemon"
+    echo "Errors: $ERROR_COUNT Pokemon"
+}
+
+# Function to calculate averages using awk
+calculate_averages() {
+    echo "Calculating averages using awk..."
+    
+    awk -F',' '
+    BEGIN {
+        sum_height = 0
+        sum_weight = 0
+        count = 0
+        print "=== POKEMON STATISTICS ==="
+        print ""
+    }
+    NR > 1 {  # Skip header line
+        sum_height += $2
+        sum_weight += $3
+        count++
+        printf "%-12s Height: %6.1fm  Weight: %6.1fkg\n", $1, $2, $3
+    }
+    END {
+        if (count > 0) {
+            avg_height = sum_height / count
+            avg_weight = sum_weight / count
+            print ""
+            print "=== SUMMARY STATISTICS ==="
+            printf "Total Pokemon: %d\n", count
+            printf "Average Height: %.2fm\n", avg_height
+            printf "Average Weight: %.2fkg\n", avg_weight
+            print ""
+            
+            # Find min/max values
+            print "=== ADDITIONAL STATS ==="
+        } else {
+            print "No data to calculate averages."
+        }
+    }' "$CSV_FILE"
+}
+
+# Function to generate detailed report
+generate_report() {
+    echo "Generating detailed report..."
+    
+    {
+        echo "POKEMON DATA SUMMARY REPORT"
+        echo "=========================="
+        echo "Generated on: $(date)"
+        echo ""
+        
+        echo "Files processed:"
+        for pokemon in "${POKEMON_LIST[@]}"; do
+            local json_file="${pokemon}.json"
+            if [ -f "$json_file" ]; then
+                local size=$(wc -c < "$json_file")
+                echo "  ✓ $json_file ($size bytes)"
+            else
+                echo "  ✗ $json_file (missing)"
+            fi
+        done
+        
+        echo ""
+        echo "=== RAW DATA ==="
+        cat "$CSV_FILE"
+        
+        echo ""
+        calculate_averages
+        
+        if [ $ERROR_COUNT -gt 0 ]; then
+            echo ""
+            echo "=== ERRORS ==="
+            echo "Check $ERROR_FILE for detailed error information."
+        fi
+        
+    } > "$REPORT_FILE"
+
+    cat "$REPORT_FILE"
+}
+
+main() {
+    echo "Pokemon Data Summarization Script"
+    echo "================================="
+    echo ""
+    
+    if ! command -v jq &> /dev/null; then
+        echo "Error: jq is not installed. Please install jq first."
+        exit 1
+    fi
+    
+    check_json_files
+    
+    create_csv_file
+    
+    echo ""
+    calculate_averages
+
+    echo ""
+    generate_report
+    
+    echo ""
+    echo "=== FILES GENERATED ==="
+    echo "✓ CSV file: $CSV_FILE"
+    echo "✓ Report file: $REPORT_FILE"
+    
+    if [ -f "$ERROR_FILE" ]; then
+        echo "! Error log: $ERROR_FILE"
+    fi
+    
+    echo ""
+    echo "Summarized Pokemon data successfully!"
+}
+
+main

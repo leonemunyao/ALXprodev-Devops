@@ -1,0 +1,34 @@
+POKEMON DATA SUMMARY REPORT
+==========================
+Generated on: Tue Aug  5 05:16:26 PM EAT 2025
+
+Files processed:
+  ✓ bulbasaur.json (257918 bytes)
+  ✓ ivysaur.json (226503 bytes)
+  ✓ venusaur.json (267856 bytes)
+  ✓ charmander.json (284760 bytes)
+  ✓ charmeleon.json (249713 bytes)
+
+=== RAW DATA ===
+Name,Height(m),Weight(kg)
+Bulbasaur,0.7,6.9
+Ivysaur,1.0,13.0
+Venusaur,2.0,100.0
+Charmander,0.6,8.5
+Charmeleon,1.1,19.0
+
+Calculating averages using awk...
+=== POKEMON STATISTICS ===
+
+Bulbasaur    Height:    0.7m  Weight:    6.9kg
+Ivysaur      Height:    1.0m  Weight:   13.0kg
+Venusaur     Height:    2.0m  Weight:  100.0kg
+Charmander   Height:    0.6m  Weight:    8.5kg
+Charmeleon   Height:    1.1m  Weight:   19.0kg
+
+=== SUMMARY STATISTICS ===
+Total Pokemon: 5
+Average Height: 1.08m
+Average Weight: 29.48kg
+
+=== ADDITIONAL STATS ===
