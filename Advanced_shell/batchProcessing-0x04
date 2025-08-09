@@ -131,6 +131,11 @@ start_parallel_processes() {
     echo ""
     echo "All processes started. Total background processes: ${#PIDS[@]}"
     echo "PIDs: ${PIDS[*]}"
+    
+    # Show current background jobs
+    echo ""
+    echo "Current background jobs:"
+    jobs
 }
 
 # Function to wait for some processes to complete (used for throttling)
@@ -175,6 +180,10 @@ monitor_processes() {
         running=0
         completed=0
         
+        # Use jobs command to check background processes
+        echo "Active background jobs:"
+        jobs
+        
         for i in "${!PIDS[@]}"; do
             local pid=${PIDS[$i]}
             local pokemon=${POKEMON_NAMES[$i]}
@@ -204,6 +213,11 @@ wait_for_all_processes() {
     echo "Waiting for all background processes to complete..."
     echo "================================================="
     
+    # Show current jobs before waiting
+    echo "Background jobs before waiting:"
+    jobs
+    echo ""
+    
     # Monitor processes with progress updates
     monitor_processes
     
@@ -228,6 +242,11 @@ wait_for_all_processes() {
             fi
         fi
     done
+    
+    # Show jobs after all processes complete
+    echo ""
+    echo "Background jobs after completion:"
+    jobs
     
     echo ""
     echo "All background processes completed!"
